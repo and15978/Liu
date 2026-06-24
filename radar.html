@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>明日做空選股雷達</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212a; --border:#2a2f3a;
+    --text:#e6e8ec; --sub:#9aa3b2; --green:#23c08a; --red:#ef5b5b;
+    --amber:#e8b339; --blue:#4d8df6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,"Segoe UI",PingFang TC,"Microsoft JhengHei",sans-serif;
+    background:var(--bg); color:var(--text); padding:20px;}
+  h1{font-size:20px; margin:0 0 4px;}
+  .sub{color:var(--sub); font-size:13px; margin-bottom:18px; line-height:1.6;}
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px;}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;}
+  label{font-size:12.5px; color:var(--sub); display:block; margin-bottom:4px;}
+  input,select{background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    padding:9px 12px; border-radius:8px; font-size:14px;}
+  button{background:var(--blue); color:#fff; border:none; padding:10px 20px; border-radius:8px;
+    font-size:14px; cursor:pointer; font-weight:700;}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+  .status{font-size:13px; color:var(--sub); margin-top:10px; line-height:1.7;}
+  .error{color:var(--red);}
+  .progress{height:6px; background:var(--panel2); border-radius:4px; margin-top:8px; overflow:hidden; display:none;}
+  .progress-bar{height:100%; background:var(--blue); width:0%; transition:width .2s;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:16px;}
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px; position:relative; overflow:hidden;}
+  .card::before{content:''; position:absolute; left:0; top:14px; bottom:14px; width:4px; border-radius:4px; background:var(--red);}
+  .card.confirmed::before{background:var(--red); box-shadow:0 0 8px var(--red);}
+  .card-head{display:flex; align-items:baseline; gap:8px; margin-bottom:10px;}
+  .card-head .name{font-size:19px; font-weight:800;}
+  .card-head .code{color:var(--sub); font-size:14px;}
+  .pillrow{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .pill{padding:4px 10px; border-radius:999px; font-size:12.5px; font-weight:700;}
+  .pill-pct{background:rgba(35,192,138,.15); color:var(--green);}
+  .pill-pct.down{background:rgba(239,91,91,.15); color:var(--red);}
+  .pill-vol{background:rgba(154,163,178,.12); color:var(--sub);}
+  .stars{color:var(--amber); font-size:13px; margin-bottom:10px;}
+  .badge-confirm{background:rgba(239,91,91,.18); color:var(--red); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:700; margin-left:6px;}
+  .badge-cdponly{background:rgba(154,163,178,.12); color:var(--sub); padding:2px 8px; border-radius:6px; font-size:11.5px; margin-left:6px;}
+  .grid4{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:10px;}
+  .box{background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:6px 4px; text-align:center;}
+  .box .l{font-size:10.5px; color:var(--sub);}
+  .box .v{font-size:14px; font-weight:700; margin-top:2px;}
+  .grid5{display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:12px;}
+  .box.cdp .v{color:var(--amber);}
+  .box.ah .v,.box.nh .v{color:var(--red);}
+  .box.nl .v,.box.al .v{color:var(--green);}
+  .kv{display:grid; grid-template-columns:78px 1fr; gap:4px 10px; font-size:13.5px; margin-bottom:6px; align-items:baseline;}
+  .kv .k{color:var(--sub);}
+  .kv .v.strong{font-weight:800; font-size:15px;}
+  .note{font-size:12.5px; color:var(--sub); margin-top:8px; line-height:1.6;}
+  a.linkbtn{display:inline-block; margin-top:12px; border:1px solid var(--red); color:var(--red); text-decoration:none;
+    padding:8px 14px; border-radius:999px; font-size:13px; font-weight:700; text-align:center;}
+  a.linkbtn:hover{background:rgba(239,91,91,.12);}
+  .empty{color:var(--sub); font-size:14px; padding:30px; text-align:center;}
+  details summary{cursor:pointer; color:var(--blue); font-size:13px;}
+  .rules{font-size:12.5px; color:var(--sub); line-height:1.8; margin-top:6px;}
+  .rules b{color:var(--text);}
+  code{background:var(--panel2); padding:1px 5px; border-radius:4px;}
+</style>
+</head>
+<body>
+
+<h1>明日做空選股雷達</h1>
+<div class="sub">
+  步驟：先用 CDP 價量規則在「成交量排行榜」內全市場掃描出偏空候選，再對候選股逐一疊加 RSI(14) / KD(9,3,3) 放空規則做二次確認。<br>
+  雙重確認（CDP + RSI/KD 都符合）的卡片會標示「<span style="color:var(--red);font-weight:700;">雙重確認</span>」，僅 CDP 符合的標示「CDP單一訊號」，僅供進場前的脈絡參考，不是買賣建議。
+</div>
+
+<div class="panel">
+  <div class="row">
+    <div>
+      <label>分析日期（僅供顯示，實際資料為證交所最新交易日）</label>
+      <input type="date" id="targetDate" disabled>
+    </div>
+    <div>
+      <label>掃描範圍（依成交量排行）</label>
+      <select id="rangeN">
+        <option value="100">前 100 檔</option>
+        <option value="150" selected>前 150 檔</option>
+        <option value="200">前 200 檔</option>
+      </select>
+    </div>
+    <div>
+      <label>資料來源模式</label>
+      <select id="mode">
+        <option value="auto">自動（推薦，會自動換來源重試）</option>
+        <option value="proxy">指定我自己的 Proxy</option>
+      </select>
+    </div>
+    <div>
+      <button id="runBtn" onclick="run()">開始掃描</button>
+    </div>
+  </div>
+  <div class="row" id="proxyRow" style="display:none; margin-top:10px;">
+    <div>
+      <label>Proxy 位址</label>
+      <input type="text" id="proxyBase" value="http://localhost:8000" style="width:220px;">
+    </div>
+    <div class="rules">會呼叫 <code>{proxy}/?url=...</code> 轉發證交所請求（例如你的 <code>cdp_proxy_server.py</code>）。</div>
+  </div>
+  <div class="progress" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+  <div class="status" id="status"></div>
+  <div class="rules" style="margin-top:8px;">
+    「自動」模式會依序嘗試：① 直接連證交所 ② 公開 CORS 代理 allorigins ③ 公開 CORS 代理 corsproxy.io，全部失敗才會顯示錯誤。
+  </div>
+</div>
+
+<div class="panel">
+  <details>
+    <summary>篩選規則說明（點擊展開）</summary>
+    <div class="rules">
+      <b>第一階段．CDP 全市場偏空篩選：</b>在所選成交量排行範圍內，挑出「今日收跌」且「收盤價落在當日價格區間下緣（收盤位置 ≤ 區間40%）」的個股，視為偏空候選。<br>
+      <b>強度分級（依今日成交量，單位：張）：</b>
+      ≥30,000張 →「弱勢延續」；3,000～30,000張 →「鎖跌停/弱勢震盪」（若跌幅接近9.5%以上視為鎖跌停）；&lt;3,000張 →「偏空震盪」。<br>
+      <b>第二階段．RSI/KD 二次確認：</b>對候選股抓近3個月日線，計算 RSI(14)、KD(9,3,3)，若符合「KD死亡交叉且RSI≥70」「RSI&gt;80＋爆量＋長上影線」或「RSI&gt;70警示」任一項，標記為雙重確認。<br>
+      <b>CDP五值算法：</b><code>CDP=(收×2+高+低)/4</code>，<code>AH=CDP+(高−低)</code>，<code>NH=CDP×2−低</code>，<code>NL=CDP×2−高</code>，<code>AL=CDP−(高−低)</code>（此處的「收/高/低」為篩選當日的數值，用來推算下一個交易日的關鍵價位）。<br>
+      <span style="color:var(--amber);">※ 全部基於日線收盤後資料，當沖實際進場仍要看開盤盤中即時價量，本工具僅作為「隔日偏空關注清單」。</span>
+    </div>
+  </details>
+</div>
+
+<div id="resultWrap" style="display:none;">
+  <div class="grid" id="cardGrid"></div>
+</div>
+
+<script>
+const statusEl = document.getElementById('status');
+document.getElementById('mode').addEventListener('change', e=>{
+  document.getElementById('proxyRow').style.display = e.target.value==='proxy' ? 'flex' : 'none';
+});
+// 預設日期 = 今天
+(function(){
+  const d = new Date();
+  document.getElementById('targetDate').value = d.toISOString().slice(0,10);
+})();
+
+function ymd(dateStr){ return dateStr.replace(/-/g,''); }
+function addDays(dateStr, n){
+  const d = new Date(dateStr+'T00:00:00');
+  d.setDate(d.getDate()+n);
+  return d.toISOString().slice(0,10);
+}
+function parseNum(s){
+  if(s===undefined||s===null) return NaN;
+  const t = s.toString().replace(/,/g,'').replace(/<[^>]*>/g,'').trim();
+  if(t==='' || t==='--' || t==='X' || t==='/') return NaN;
+  return parseFloat(t);
+}
+function changeSign(htmlTag){
+  if(!htmlTag) return 0;
+  if(htmlTag.includes('red')) return 1;
+  if(htmlTag.includes('green')) return -1;
+  return 0;
+}
+let fetchLog = [];
+
+async function fetchUrl(rawUrl, mode, proxyBase, label){
+  const tag = label || rawUrl.slice(0,60);
+  if(mode==='proxy'){
+    const url = `${proxyBase}/?url=${encodeURIComponent(rawUrl)}`;
+    try{
+      const resp = await fetch(url);
+      fetchLog.push({src:`${tag} (自訂Proxy)`, ok:resp.ok, status:resp.status});
+      if(!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
+      return resp.json();
+    }catch(e){
+      fetchLog.push({src:`${tag} (自訂Proxy)`, ok:false, error:e.message});
+      throw e;
+    }
+  }
+  const attempts = [
+    {src:`${tag} 直連`, url: rawUrl},
+    {src:`${tag} allorigins`, url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(rawUrl)},
+    {src:`${tag} corsproxy.io`, url: 'https://corsproxy.io/?' + encodeURIComponent(rawUrl)},
+  ];
+  let lastErr;
+  for(const a of attempts){
+    try{
+      const resp = await fetch(a.url);
+      if(!resp.ok){ fetchLog.push({src:a.src, ok:false, status:resp.status}); lastErr = new Error(`HTTP ${resp.status}`); continue; }
+      const data = await resp.json();
+      fetchLog.push({src:a.src, ok:true, status:resp.status});
+      return data;
+    }catch(e){ fetchLog.push({src:a.src, ok:false, error:e.message}); lastErr = e; }
+  }
+  throw lastErr || new Error('所有來源都失敗');
+}
+
+function renderFetchLog(){
+  let box = document.getElementById('fetchLogBox');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'fetchLogBox';
+    box.className = 'rules';
+    box.style.marginTop = '10px';
+    statusEl.parentNode.appendChild(box);
+  }
+  if(fetchLog.length===0){ box.innerHTML=''; return; }
+  const lines = fetchLog.map(l=>{
+    if(l.ok) return `✅ ${l.src} 成功 ${l.status?`(HTTP ${l.status})`:''}`;
+    if(l.status) return `❌ ${l.src} 失敗 (HTTP ${l.status})`;
+    return `❌ ${l.src} 失敗：${l.error}`;
+  });
+  box.innerHTML = '<details open><summary>抓取過程記錄（除錯用）</summary>' + lines.join('<br>') + '</details>';
+}
+
+async function fetchMarketDay(dateStr, mode, proxyBase){
+  const dStr = ymd(dateStr);
+  const url = `https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date=${dStr}&type=ALLBUT0999`;
+  const json = await fetchUrl(url, mode, proxyBase, `市場行情${dStr}`);
+  return json;
+}
+
+function computeRSI(closes, period=14){
+  const rsi = new Array(closes.length).fill(null);
+  if(closes.length < period+1) return rsi;
+  let gainSum=0, lossSum=0;
+  for(let i=1;i<=period;i++){
+    const diff = closes[i]-closes[i-1];
+    if(diff>0) gainSum+=diff; else lossSum+=-diff;
+  }
+  let avgGain = gainSum/period, avgLoss = lossSum/period;
+  rsi[period] = avgLoss===0 ? 100 : 100 - 100/(1+(avgGain/avgLoss));
+  for(let i=period+1;i<closes.length;i++){
+    const diff = closes[i]-closes[i-1];
+    const gain = diff>0?diff:0, loss = diff<0?-diff:0;
+    avgGain = (avgGain*(period-1)+gain)/period;
+    avgLoss = (avgLoss*(period-1)+loss)/period;
+    rsi[i] = avgLoss===0 ? 100 : 100 - 100/(1+(avgGain/avgLoss));
+  }
+  return rsi;
+}
+function computeKD(highs, lows, closes, period=9){
+  const K=new Array(closes.length).fill(null), D=new Array(closes.length).fill(null);
+  let prevK=50, prevD=50;
+  for(let i=0;i<closes.length;i++){
+    if(i<period-1){continue;}
+    const hh = Math.max(...highs.slice(i-period+1,i+1));
+    const ll = Math.min(...lows.slice(i-period+1,i+1));
+    const rsv = hh===ll?50:(closes[i]-ll)/(hh-ll)*100;
+    const k = prevK*(2/3)+rsv*(1/3);
+    const d = prevD*(2/3)+k*(1/3);
+    K[i]=k; D[i]=d; prevK=k; prevD=d;
+  }
+  return {K,D};
+}
+function twDateToISO(d){
+  const [y,m,day]=d.split('/');
+  return (parseInt(y,10)+1911)+'-'+m.padStart(2,'0')+'-'+day.padStart(2,'0');
+}
+
+async function fetchStockHistory(stockNo, monthsBack, mode, proxyBase){
+  const now = new Date();
+  let rows = [];
+  for(let i=0;i<monthsBack;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const dStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}01`;
+    const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${dStr}&stockNo=${stockNo}`;
+    try{
+      const json = await fetchUrl(url, mode, proxyBase);
+      if(json.stat && json.stat.includes('OK') && json.data) rows = rows.concat(json.data);
+    }catch(e){}
+    await new Promise(r=>setTimeout(r,400));
+  }
+  const parsed = rows.map(r=>({
+    date: twDateToISO(r[0]),
+    volume: parseNum(r[1]),
+    close: parseNum(r[6]),
+    high: parseNum(r[4]),
+    low: parseNum(r[5]),
+    open: parseNum(r[3]),
+  })).filter(r=>!isNaN(r.close));
+  const seen=new Set(); const dedup=[];
+  for(const r of parsed){ if(!seen.has(r.date)){seen.add(r.date); dedup.push(r);} }
+  dedup.sort((a,b)=>a.date.localeCompare(b.date));
+  return dedup;
+}
+
+function evalRsiKd(dedup){
+  const closes=dedup.map(r=>r.close), highs=dedup.map(r=>r.high), lows=dedup.map(r=>r.low), vols=dedup.map(r=>r.volume);
+  const rsi = computeRSI(closes,14);
+  const {K,D} = computeKD(highs,lows,closes,9);
+  const i = dedup.length-1;
+  if(i<15) return {confirmed:false, label:'資料不足'};
+  const rsiNow=rsi[i], rsiPrev=rsi[i-1], kNow=K[i], dNow=D[i], kPrev=K[i-1], dPrev=D[i-1];
+  const start=Math.max(0,i-5);
+  const avgVol5 = vols.slice(start,i).reduce((a,b)=>a+b,0)/Math.max(1,vols.slice(start,i).length);
+  const volSpike = avgVol5? vols[i]>avgVol5*1.5 : false;
+  const range = highs[i]-lows[i];
+  const upperShadow = highs[i]-Math.max(dedup[i].open, closes[i]);
+  const longUpperShadow = range>0 ? (upperShadow/range)>0.5 : false;
+  const kdDeathCross = kPrev>=dPrev && kNow<dNow;
+  const rsiOverbought = rsiNow>70;
+  const rsiExtreme = rsiNow>80;
+  const strongShort = kdDeathCross && rsiNow>=70;
+  const pullbackRisk = rsiExtreme && volSpike && longUpperShadow;
+  let confirmed=false, label='RSI/KD：無明顯放空訊號';
+  if(strongShort){confirmed=true; label='KD死亡交叉＋RSI≥70';}
+  else if(pullbackRisk){confirmed=true; label='RSI>80＋爆量＋長上影線';}
+  else if(kdDeathCross){confirmed=true; label='KD死亡交叉';}
+  else if(rsiOverbought){confirmed=true; label='RSI超買(>70)轉弱警示';}
+  return {confirmed, label, rsi:rsiNow, k:kNow, d:dNow};
+}
+
+function fmt(n,d=2){ return (n===null||n===undefined||isNaN(n))?'—':n.toFixed(d); }
+
+async function run(){
+  const rangeN = parseInt(document.getElementById('rangeN').value,10);
+  const mode = document.getElementById('mode').value;
+  const proxyBase = document.getElementById('proxyBase').value.trim();
+  const runBtn = document.getElementById('runBtn');
+
+  runBtn.disabled = true;
+  document.getElementById('resultWrap').style.display='none';
+  document.getElementById('progressWrap').style.display='none';
+  statusEl.textContent = '正在抓取全市場收盤行情…';
+  fetchLog = [];
+
+  try{
+    const raw = await fetchUrl(
+      'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL',
+      mode, proxyBase, '全市場OpenAPI'
+    );
+    if(!Array.isArray(raw) || raw.length===0){
+      throw new Error('OpenAPI 回傳空資料，可能證交所當下無資料或服務異常');
+    }
+
+    statusEl.textContent = `已取得 ${raw.length} 檔股票最新交易日資料，正在篩選成交量前 ${rangeN} 檔…`;
+
+    const all = raw.map(r=>({
+      code: r.Code, name: r.Name,
+      volShares: parseNum(r.TradeVolume),
+      open: parseNum(r.OpeningPrice), high: parseNum(r.HighestPrice),
+      low: parseNum(r.LowestPrice), close: parseNum(r.ClosingPrice),
+      changeSigned: parseNum(r.Change),
+    })).filter(r=> !isNaN(r.close) && !isNaN(r.high) && !isNaN(r.low) && !isNaN(r.open) && !isNaN(r.volShares) && r.high>0 && r.low>0);
+
+    const day = (raw[0] && (raw[0].Date || raw[0].Time)) ? (raw[0].Date||raw[0].Time) : '最新交易日';
+
+    all.sort((a,b)=> b.volShares - a.volShares);
+    const top = all.slice(0, rangeN);
+
+    // 第一階段：CDP 偏空篩選
+    const candidates = [];
+    for(const r of top){
+      const lots = r.volShares/1000; // 張
+      const changeSigned = r.changeSigned || 0;
+      const prevClose = r.close - changeSigned;
+      const pct = prevClose !== 0 ? (changeSigned/prevClose)*100 : 0;
+      const range = r.high - r.low;
+      const closePos = range>0 ? (r.close - r.low)/range : 0.5;
+      const isDown = changeSigned < 0;
+      const weakClose = closePos <= 0.4;
+      if(!(isDown && weakClose)) continue;
+
+      const cdp = (r.close*2 + r.high + r.low)/4;
+      const ah = cdp + (r.high - r.low);
+      const nh = cdp*2 - r.low;
+      const nl = cdp*2 - r.high;
+      const al = cdp - (r.high - r.low);
+
+      let tier, template, entry, stop, t1, t2, note;
+      const limitDown = pct <= -9.3;
+      if(limitDown && lots<30000){
+        tier='lockLimit'; template='鎖跌停／弱勢震盪';
+        entry='開盤觀察是否打開跌停；若打開後反彈受阻於NH附近，再順勢進空單';
+        stop=`站上NH(${fmt(nh)})且站穩 → 停損`;
+        t1=`${fmt(nl)}（測NL）`; t2=`${fmt(al)}（測AL）`;
+        note='鎖跌停力道不明，反彈風險較高，建議減碼操作，避免重倉追空';
+      } else if(lots>=30000){
+        tier='strong'; template='弱勢延續';
+        entry=`開盤5分鐘內跌破NL(${fmt(nl)})且量能持續放大`;
+        stop=`漲破NH(${fmt(nh)}) → 停損`;
+        t1=`${fmt(al)}（測AL）`; t2=`${fmt(2*al-nl)}（測延伸滿足點）`;
+        note='量大波動大，破位力道強，適合快進快出，嚴設停損';
+      } else {
+        tier='range'; template='偏空震盪';
+        entry=`盤中反彈至NH(${fmt(nh)})～AH(${fmt(ah)})附近遇壓、量縮時找空點`;
+        stop=`量增站穩AH(${fmt(ah)})之上 → 停損`;
+        t1=`${fmt(cdp)}（測CDP）`; t2=`${fmt(nl)}（測NL）`;
+        note='量能普通，區間操作為主，不宜追價，等反彈到位才進場';
+      }
+
+      candidates.push({
+        code:r.code, name:r.name, close:r.close, high:r.high, low:r.low, open:r.open,
+        lots, pct, cdp, ah, nh, nl, al, template, tier,
+        entry, stop, t1, t2, note,
+        rsiKd:null,
+      });
+    }
+
+    if(candidates.length===0){
+      statusEl.textContent = `交易日 ${day}：成交量前 ${rangeN} 檔中，沒有符合「收跌且收在區間下緣」的偏空候選股。`;
+      runBtn.disabled = false;
+      return;
+    }
+
+    statusEl.textContent = `CDP 篩出 ${candidates.length} 檔偏空候選，正在逐一抓歷史日線疊加 RSI/KD 確認（較慢，請耐心等候）…`;
+    document.getElementById('progressWrap').style.display='block';
+    const bar = document.getElementById('progressBar');
+
+    for(let i=0;i<candidates.length;i++){
+      const c = candidates[i];
+      bar.style.width = `${Math.round((i/candidates.length)*100)}%`;
+      statusEl.textContent = `RSI/KD 確認中… (${i+1}/${candidates.length}) ${c.code} ${c.name}`;
+      try{
+        const hist = await fetchStockHistory(c.code, 3, mode, proxyBase);
+        c.rsiKd = evalRsiKd(hist);
+      }catch(e){
+        c.rsiKd = {confirmed:false, label:'抓取失敗，僅以CDP判斷'};
+      }
+      await new Promise(r=>setTimeout(r,500));
+    }
+    bar.style.width='100%';
+
+    candidates.sort((a,b)=>{
+      const ac = a.rsiKd && a.rsiKd.confirmed ? 1:0;
+      const bc = b.rsiKd && b.rsiKd.confirmed ? 1:0;
+      if(bc!==ac) return bc-ac;
+      return b.lots - a.lots;
+    });
+
+    renderCards(candidates, day, rangeN);
+    statusEl.textContent = `交易日 ${day}：成交量前 ${rangeN} 檔中，CDP篩出 ${candidates.length} 檔偏空候選，其中 ${candidates.filter(c=>c.rsiKd&&c.rsiKd.confirmed).length} 檔 RSI/KD 也同步確認。`;
+    renderFetchLog();
+
+  }catch(err){
+    console.error(err);
+    statusEl.innerHTML = `<span class="error">掃描失敗：${err.message}。自動模式已嘗試直連與兩個公開代理都失敗，可能是公開代理當下也被擋；可以切換「資料來源模式」為「指定我自己的 Proxy」並啟動 cdp_proxy_server.py 再試一次。</span>`;
+    renderFetchLog();
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+function renderCards(list, day, rangeN){
+  const grid = document.getElementById('cardGrid');
+  grid.innerHTML='';
+  if(list.length===0){
+    grid.innerHTML = `<div class="empty">沒有符合條件的個股</div>`;
+  } else {
+    for(const c of list){
+      const confirmed = c.rsiKd && c.rsiKd.confirmed;
+      const stars = confirmed ? '★★★★★' : (c.tier==='strong' ? '★★★★☆' : '★★★☆☆');
+      const card = document.createElement('div');
+      card.className = 'card' + (confirmed ? ' confirmed' : '');
+      card.innerHTML = `
+        <div class="card-head">
+          <span class="name">${c.name}</span><span class="code">${c.code}</span>
+        </div>
+        <div class="pillrow">
+          <span class="pill pill-pct down">▼${fmt(Math.abs(c.pct),2)}%</span>
+          <span class="pill pill-vol">量 ${c.lots.toLocaleString(undefined,{maximumFractionDigits:0})} 張</span>
+          <span class="pill pill-vol">${c.template}</span>
+        </div>
+        <div class="stars">${stars} ${confirmed?'<span class="badge-confirm">雙重確認</span>':'<span class="badge-cdponly">CDP單一訊號</span>'}</div>
+        <div class="grid4">
+          <div class="box"><div class="l">收盤</div><div class="v">${fmt(c.close)}</div></div>
+          <div class="box"><div class="l">最高</div><div class="v">${fmt(c.high)}</div></div>
+          <div class="box"><div class="l">最低</div><div class="v">${fmt(c.low)}</div></div>
+          <div class="box"><div class="l">量(張)</div><div class="v">${Math.round(c.lots)}</div></div>
+        </div>
+        <div class="grid5">
+          <div class="box cdp"><div class="l">CDP</div><div class="v">${fmt(c.cdp)}</div></div>
+          <div class="box ah"><div class="l">AH</div><div class="v">${fmt(c.ah)}</div></div>
+          <div class="box nh"><div class="l">NH</div><div class="v">${fmt(c.nh)}</div></div>
+          <div class="box nl"><div class="l">NL</div><div class="v">${fmt(c.nl)}</div></div>
+          <div class="box al"><div class="l">AL</div><div class="v">${fmt(c.al)}</div></div>
+        </div>
+        <div class="kv"><div class="k">劇本方向</div><div class="v strong" style="color:var(--red);">偏空（${c.template}）</div></div>
+        <div class="kv"><div class="k">進場條件</div><div class="v">${c.entry}</div></div>
+        <div class="kv"><div class="k">停損價</div><div class="v" style="color:var(--green);">${c.stop}</div></div>
+        <div class="kv"><div class="k">第一目標</div><div class="v strong">${c.t1}</div></div>
+        <div class="kv"><div class="k">第二目標</div><div class="v strong">${c.t2}</div></div>
+        <div class="kv"><div class="k">RSI/KD</div><div class="v">${c.rsiKd ? c.rsiKd.label : '未檢查'}${c.rsiKd&&c.rsiKd.rsi!==undefined?` (RSI ${fmt(c.rsiKd.rsi,1)} / K ${fmt(c.rsiKd.k,1)} / D ${fmt(c.rsiKd.d,1)})`:''}</div></div>
+        <div class="note">備註：${c.note}</div>
+        <a class="linkbtn" href="https://mis.twse.com.tw/stock/index.jsp?ch=${c.code}.tw" target="_blank">▶ 開啟即時報價</a>
+      `;
+      grid.appendChild(card);
+    }
+  }
+  document.getElementById('resultWrap').style.display='block';
+}
+</script>
+
+</body>
+</html>
