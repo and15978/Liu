@@ -199,10 +199,11 @@
         <input type="number" id="volThreshold" value="5000" step="500">
       </div>
     </div>
-    <button id="autoFetchBtn">嘗試自動抓取證交所資料（盤後official資料）</button>
+    <button id="autoFetchBtn">讀取每日自動更新資料（GitHub自動抓取，最穩定）</button>
     <button class="ghost" id="yahooRankBtn">改用 Yahoo 即時排行（盤中可用，需先啟動本地代理）</button>
     <div class="sub" style="margin-top:8px;">
-      證交所MI_INDEX/STOCK_DAY是「盤後」才公布的官方資料，盤中（9:00~13:30）按上面那顆通常抓不到今天的資料，這是正常現象不是bug。
+      這顆改成讀取 <code>data/latest.json</code>——這個檔案由 GitHub Actions 每個交易日收盤後自動執行抓取並更新，網頁只是讀自己repo裡的靜態檔案，不會被CORS擋。
+      如果顯示「讀取失敗」，通常是還沒手動觸發過第一次，到 repo 的 <b>Actions</b> 分頁找 <b>Daily TWSE Fetch</b> → <b>Run workflow</b> 跑一次即可。
       盤中要看當下排行，請按下面這顆改用Yahoo股市排行（必須先啟動 cdp_proxy_server.py，因為要靠它解析網頁、繞過CORS）。
     </div>
     <div id="statusArea"></div>
@@ -640,66 +641,42 @@ function extractStockTable(payload){
 }
 
 async function autoFetch(){
-  const dateVal = document.getElementById('dateInput').value; // YYYY-MM-DD
-  if(!dateVal){
-    setStatus('請先選擇日期。', 'error');
-    return;
-  }
-  const dateStr = dateVal.replace(/-/g, '');
   const pctThreshold = parseFloat(document.getElementById('pctThreshold').value) || 0;
   const volThreshold = parseFloat(document.getElementById('volThreshold').value) || 0;
 
-  setStatus('正在嘗試連線證交所資料...', 'loading');
+  setStatus('正在讀取每日自動更新的資料檔...', 'loading');
 
-  const url = `https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date=${dateStr}&type=ALLBUT0999`;
-  const proxyPath = `/api/mi?date=${dateStr}`;
-
-  let payload, viaProxy;
+  let payload;
   try{
-    const result = await fetchJsonWithProxyFallback(url, proxyPath);
-    payload = result.data;
-    viaProxy = result.viaProxy;
+    const resp = await fetch('data/latest.json', {cache: 'no-store'});
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    payload = await resp.json();
   } catch(err){
     setStatus(
-      `自動抓取失敗：${err.message || err}<br>請改用下方「手動貼上資料」的備用方案。`,
+      `讀取自動更新資料失敗：${err.message || err}<br>`+
+      `可能是 GitHub Actions 還沒第一次執行。請到 repo 的 Actions 分頁，選「Daily TWSE Fetch」→「Run workflow」手動跑一次，等它跑完（約30秒~1分鐘）再重新整理這頁試一次。或先用下方「手動貼上資料」。`,
       'error'
     );
     return;
   }
 
-  const target = extractStockTable(payload);
-
-  if(!target){
-    setStatus('連線成功，但找不到個股收盤行情表，可能是非交易日或假日，請換一個日期再試。', 'error');
+  const stocks = payload.stocks || [];
+  if(stocks.length === 0){
+    setStatus('資料檔是空的，請確認 GitHub Actions 是否執行成功（到 repo 的 Actions 分頁看有沒有綠色勾勾）。', 'error');
     return;
   }
 
-  const fields = target.fields;
-  const idxCode = findField(fields, ['證券代號']);
-  const idxName = findField(fields, ['證券名稱']);
-  const idxHigh = findField(fields, ['最高價']);
-  const idxLow = findField(fields, ['最低價']);
-  const idxClose = findField(fields, ['收盤價']);
-  const idxChange = findField(fields, ['漲跌價差']);
-  const idxSign = findField(fields, ['漲跌(+/-)', '漲跌(+-)']);
-  const idxVol = findField(fields, ['成交股數']);
-
   const results = [];
   const fullList = [];
-  (target.data || []).forEach(row => {
-    const code = row[idxCode];
-    const name = row[idxName];
-    const high = parseFloat(String(row[idxHigh]).replace(/,/g, ''));
-    const low = parseFloat(String(row[idxLow]).replace(/,/g, ''));
-    const close = parseFloat(String(row[idxClose]).replace(/,/g, ''));
-    let change = parseFloat(String(row[idxChange]).replace(/,/g, ''));
-    const signRaw = idxSign >= 0 ? String(row[idxSign]) : '';
-    const volShares = parseFloat(String(row[idxVol]).replace(/,/g, ''));
+  stocks.forEach(r => {
+    const code = r.Code, name = r.Name;
+    const high = parseFloat(String(r.HighestPrice).replace(/,/g, ''));
+    const low = parseFloat(String(r.LowestPrice).replace(/,/g, ''));
+    const close = parseFloat(String(r.ClosingPrice).replace(/,/g, ''));
+    const change = parseFloat(String(r.Change).replace(/,/g, ''));
+    const volShares = parseFloat(String(r.TradeVolume).replace(/,/g, ''));
 
-    if(isNaN(close) || isNaN(high) || isNaN(low) || isNaN(change) || isNaN(volShares)) return;
-
-    if(signRaw.includes('-') || signRaw.includes('跌')) change = -Math.abs(change);
-    else change = Math.abs(change);
+    if(isNaN(close) || isNaN(high) || isNaN(low) || isNaN(change) || isNaN(volShares) || high<=0 || low<=0) return;
 
     const prevClose = close - change;
     if(!prevClose) return;
@@ -714,8 +691,11 @@ async function autoFetch(){
   });
 
   lastDataset = fullList;
-  const sourceNote = viaProxy ? '（透過本地代理伺服器）' : '（直連成功）';
-  setStatus(`抓取成功！${sourceNote}共 ${results.length} 檔符合篩選條件（資料庫內共 ${fullList.length} 檔個股，可在下方查詢任一檔CDP）。`, 'ok');
+  const fetchedAt = payload.fetched_at_utc ? new Date(payload.fetched_at_utc) : null;
+  const fetchedNote = fetchedAt
+    ? `（資料更新時間：${fetchedAt.toLocaleString('zh-TW', {timeZone:'Asia/Taipei'})} 台北時間）`
+    : '';
+  setStatus(`讀取成功！${fetchedNote}共 ${results.length} 檔符合篩選條件（資料庫內共 ${fullList.length} 檔個股，可在下方查詢任一檔CDP）。`, 'ok');
   renderResults(results);
 }
 
@@ -933,6 +913,18 @@ function setSearchStatus(msg, type){
 
 async function fetchOpenApiAll(){
   if(openApiCache) return openApiCache;
+  // 優先讀取每日自動更新的靜態檔（同站讀取，不會被CORS擋，最穩定）
+  try{
+    const resp = await fetch('data/latest.json', {cache: 'no-store'});
+    if(resp.ok){
+      const payload = await resp.json();
+      if(Array.isArray(payload.stocks) && payload.stocks.length){
+        openApiCache = payload.stocks;
+        return openApiCache;
+      }
+    }
+  }catch(e){ /* 靜態檔不存在或讀取失敗，往下走原本的直連備援 */ }
+
   const { data } = await fetchJsonWithProxyFallback(TWSE_OPENAPI_URL, '/api/all');
   openApiCache = data;
   return data;
