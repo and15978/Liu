@@ -75,8 +75,8 @@
 <div class="panel">
   <div class="row">
     <div>
-      <label>分析日期（僅供顯示，實際資料為證交所最新交易日）</label>
-      <input type="date" id="targetDate" disabled>
+      <label>分析日期（讀取對應的存檔，沒存過會自動退回最新資料）</label>
+      <input type="date" id="targetDate">
     </div>
     <div>
       <label>掃描範圍（依成交量排行）</label>
@@ -315,23 +315,39 @@ async function run(){
   const mode = document.getElementById('mode').value;
   const proxyBase = document.getElementById('proxyBase').value.trim();
   const runBtn = document.getElementById('runBtn');
+  const dateVal = document.getElementById('targetDate').value; // YYYY-MM-DD
 
   runBtn.disabled = true;
   document.getElementById('resultWrap').style.display='none';
   document.getElementById('progressWrap').style.display='none';
-  statusEl.textContent = '正在抓取全市場收盤行情…';
+  statusEl.textContent = '正在讀取資料檔…';
   fetchLog = [];
 
   try{
-    const raw = await fetchUrl(
-      'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL',
-      mode, proxyBase, '全市場OpenAPI'
-    );
-    if(!Array.isArray(raw) || raw.length===0){
-      throw new Error('OpenAPI 回傳空資料，可能證交所當下無資料或服務異常');
+    let payload, usedFallback = false;
+
+    if(dateVal){
+      try{
+        const resp = await fetch(`data/${dateVal}.json`, {cache:'no-store'});
+        if(resp.ok) payload = await resp.json();
+      }catch(e){ /* 該日期還沒存檔，往下退回latest */ }
+    }
+    if(!payload){
+      if(dateVal) usedFallback = true;
+      const resp = await fetch('data/latest.json', {cache:'no-store'});
+      if(!resp.ok) throw new Error(`讀取 data/latest.json 失敗 (HTTP ${resp.status})`);
+      payload = await resp.json();
     }
 
-    statusEl.textContent = `已取得 ${raw.length} 檔股票最新交易日資料，正在篩選成交量前 ${rangeN} 檔…`;
+    const raw = payload.stocks || [];
+    if(raw.length===0){
+      throw new Error('資料檔是空的，請確認 GitHub Actions 是否執行成功');
+    }
+
+    const day = payload.trade_date || '未知日期';
+    const fallbackNote = usedFallback ? `（你選的 ${dateVal} 還沒有存檔，目前顯示的是最新一次的資料；要回補這天，到 repo 的 Actions → Daily TWSE Fetch → Run workflow，填入 ${dateVal.replace(/-/g,'')} 執行一次）` : '';
+
+    statusEl.textContent = `已取得 ${raw.length} 檔股票（交易日：${day}）${fallbackNote}，正在篩選成交量前 ${rangeN} 檔…`;
 
     const all = raw.map(r=>({
       code: r.Code, name: r.Name,
@@ -340,8 +356,6 @@ async function run(){
       low: parseNum(r.LowestPrice), close: parseNum(r.ClosingPrice),
       changeSigned: parseNum(r.Change),
     })).filter(r=> !isNaN(r.close) && !isNaN(r.high) && !isNaN(r.low) && !isNaN(r.open) && !isNaN(r.volShares) && r.high>0 && r.low>0);
-
-    const day = (raw[0] && (raw[0].Date || raw[0].Time)) ? (raw[0].Date||raw[0].Time) : '最新交易日';
 
     all.sort((a,b)=> b.volShares - a.volShares);
     const top = all.slice(0, rangeN);
