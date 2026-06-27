@@ -168,6 +168,19 @@
   .help{ font-size:11.5px; color:var(--muted); line-height:1.7; margin-top:10px; border-top:1px solid var(--line); padding-top:10px; }
   .help b{ color:var(--text); }
 
+  .branch-table-wrap{ overflow-x:auto; margin-top:10px; border:1px solid var(--line); border-radius:8px; }
+  table.branch-table{ width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }
+  table.branch-table th{
+    background:var(--panel-2); color:var(--gold); font-weight:700; padding:8px 10px;
+    position:sticky; top:0; border-bottom:1px solid var(--line);
+  }
+  table.branch-table td{
+    padding:6px 10px; border-bottom:1px solid var(--line); color:var(--text);
+  }
+  table.branch-table tr:nth-child(even) td{ background:rgba(255,255,255,0.02); }
+  table.branch-table td.empty-cell{ color:var(--muted); }
+  .branch-source{ font-size:10.5px; color:var(--muted); margin-top:8px; }
+
   footer{ text-align:center; font-size:11px; color:#454d5e; padding:20px; font-family:'JetBrains Mono',monospace; }
 </style>
 </head>
@@ -259,6 +272,44 @@
     <button class="ghost" id="searchBtn">查詢個股 CDP</button>
     <div id="searchStatus"></div>
     <div id="searchResultArea"></div>
+  </div>
+
+  <div class="card">
+    <h2>券商分點分類參考表</h2>
+    <div class="sub" style="margin-bottom:6px;">
+      依「當沖／隔日沖／短線／波段」整理常見券商分點，純參考資料，不會連線抓取，看到哪個分點進出可以對照大概是哪種交易風格的籌碼。
+    </div>
+    <details>
+      <summary>展開查看分類表（20列 × 6欄，可橫向滑動）</summary>
+    <div class="branch-table-wrap">
+      <table class="branch-table">
+        <thead><tr><th>當沖</th><th>隔日沖</th><th>隔日沖</th><th>短線</th><th>波段</th><th>波段</th></tr></thead>
+        <tbody>
+          <tr><td>新加坡瑞銀</td><td>美商高盛</td><td>兆豐-南京</td><td>新加坡瑞銀瑞銀</td><td>台灣匯立</td><td>元大-敦化</td></tr>
+          <tr><td>摩根大通</td><td>港商野村</td><td>兆豐-復興</td><td>摩根大通</td><td>台灣摩根</td><td>日盛-龍潭</td></tr>
+          <tr><td>美林</td><td>新加坡瑞銀</td><td>凱基-士林</td><td>玉山</td><td>港商野村</td><td>台企銀-桃園</td></tr>
+          <tr><td>元大</td><td>摩根大通</td><td>凱基-台北</td><td>康和</td><td>瑞士信貸</td><td>台新-高雄</td></tr>
+          <tr><td>元富</td><td>元大</td><td>凱基-市政</td><td>台企銀-嘉義</td><td>摩根大通</td><td>兆豐-忠孝</td></tr>
+          <tr><td>台新</td><td>元富</td><td>凱基-板橋</td><td>台新-台中</td><td>元富</td><td>兆豐-復興</td></tr>
+          <tr><td>亞東</td><td>元大-土城永寧</td><td>凱基-屏東</td><td>台新-建北</td><td>台新</td><td>國票-和平</td></tr>
+          <tr><td>新光</td><td>元大-太平</td><td>富邦-台中</td><td>台新-高雄</td><td>宏遠</td><td>國票-長城</td></tr>
+          <tr><td>群益</td><td>元大-成功</td><td>富邦-台南</td><td>玉山-台南</td><td>國泰綜合</td><td>凱基-大安</td></tr>
+          <tr><td>元大-中壢</td><td>元大-竹科</td><td>富邦-虎尾</td><td>兆豐-大安</td><td>富邦</td><td>凱基-中港</td></tr>
+          <tr><td>永全-八德</td><td>元大-虎尾</td><td>富邦-建國</td><td>兆豐-忠孝</td><td>華南永昌</td><td>富邦-南屯</td></tr>
+          <tr><td>兆豐-南門</td><td>元大-鹿港</td><td>統一-仁愛</td><td>合庫-台中</td><td>新光</td><td>統一-敦南</td></tr>
+          <tr><td>凱基-大里</td><td>元大-新竹</td><td>統一-松江</td><td>國泰-博愛</td><td>群益</td><td class="empty-cell">—</td></tr>
+          <tr><td>凱基-台北</td><td>元大-彰化</td><td>統一-南京</td><td>國票-長城</td><td>福邦</td><td class="empty-cell">—</td></tr>
+          <tr><td>凱基-屏東</td><td>日盛-忠孝</td><td>華南-竹北</td><td>凱基-市政</td><td>中國信託</td><td class="empty-cell">—</td></tr>
+          <tr><td>凱基-員林</td><td>永豐金-虎尾</td><td>華南-長虹</td><td>凱基-桃園</td><td class="empty-cell">—</td><td class="empty-cell">—</td></tr>
+          <tr><td>凱基-站前</td><td>永豐金-桃園</td><td>華南-嘉義</td><td>富邦-建國</td><td class="empty-cell">—</td><td class="empty-cell">—</td></tr>
+          <tr><td>富邦-嘉義</td><td>兆豐-中港</td><td>群益-內湖</td><td>富邦-員林</td><td class="empty-cell">—</td><td class="empty-cell">—</td></tr>
+          <tr><td>華南-中正</td><td>兆豐-北高雄</td><td>群益-海山</td><td>統一-敦南</td><td class="empty-cell">—</td><td class="empty-cell">—</td></tr>
+          <tr><td>聯邦-富強</td><td>兆豐-虎尾</td><td>群益-館前</td><td class="empty-cell">—</td><td class="empty-cell">—</td><td class="empty-cell">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="branch-source">資料來源：使用者提供的圖片整理，純參考用，不代表即時進出，請自行核實。</div>
+    </details>
   </div>
 
   <div class="card" id="resultsCard" style="display:none;">
