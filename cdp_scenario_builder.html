@@ -226,6 +226,13 @@
       </div>
     </div>
 
+    <div class="row" style="margin-top:8px; align-items:center;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text);">
+        <input type="checkbox" id="dayTradeEnabled" style="width:16px; height:16px;">
+        顯示「當沖張數」（證交所每日當日沖銷交易標的，免費官方資料；不含隔日沖，證交所沒有公布這項統計）
+      </label>
+    </div>
+
     <div class="sub" style="margin-top:8px;">
       這顆改成讀取 <code>data/latest.json</code>——這個檔案由 GitHub Actions 每個交易日收盤後自動執行抓取並更新，網頁只是讀自己repo裡的靜態檔案，不會被CORS擋。
       如果顯示「讀取失敗」，通常是還沒手動觸發過第一次，到 repo 的 <b>Actions</b> 分頁找 <b>Daily TWSE Fetch</b> → <b>Run workflow</b> 跑一次即可。
@@ -476,6 +483,9 @@ function renderResults(results, areaId='resultsArea', cardId='resultsCard', empt
     const instBadge = (r.instNetBuy !== undefined && r.instNetBuy !== null)
       ? `<span class="sc-badge vol">主力買超 ${r.instNetBuy.toLocaleString()} 張</span>`
       : '';
+    const dayTradeBadge = (r.dayTradeLots !== undefined && r.dayTradeLots !== null)
+      ? `<span class="sc-badge vol">當沖 ${r.dayTradeLots.toLocaleString()} 張</span>`
+      : '';
     html += `
     <div class="scenario-card ${colorClass}" id="card-${uid}">
       <div class="sc-title">${r.name} <span class="sc-code">${r.code}</span></div>
@@ -484,6 +494,7 @@ function renderResults(results, areaId='resultsArea', cardId='resultsCard', empt
         <span class="sc-badge vol">量 ${r.volLots.toLocaleString()} 張</span>
         <span class="sc-badge star" id="${uid}-stars">${r.stars}</span>
         ${instBadge}
+        ${dayTradeBadge}
         ${metaBadge}
         ${queryBadge}
       </div>
@@ -801,7 +812,8 @@ async function autoFetch(){
 
   // 主力買超篩選（選用）：用該交易日的T86三大法人買賣超資料，過濾/標註結果
   const t86DateForFilter = (payload.trade_date || dateVal || '').replace(/-/g, '');
-  const finalResults = await applyInstFilterIfEnabled(results, t86DateForFilter);
+  let finalResults = await applyInstFilterIfEnabled(results, t86DateForFilter);
+  finalResults = await annotateDayTradingIfEnabled(finalResults, t86DateForFilter);
   const instNote = document.getElementById('instFilterEnabled').checked
     ? `，其中主力買超達標 ${finalResults.length} 檔`
     : '';
@@ -855,7 +867,8 @@ async function fetchYahooRank(rankType){
 
   // 主力買超篩選（選用）：Yahoo排行視為「今天」的資料，用今天日期去抓T86
   const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const finalResults = await applyInstFilterIfEnabled(results, todayStr);
+  let finalResults = await applyInstFilterIfEnabled(results, todayStr);
+  finalResults = await annotateDayTradingIfEnabled(finalResults, todayStr);
   const instNote = document.getElementById('instFilterEnabled').checked
     ? `，其中主力買超達標 ${finalResults.length} 檔`
     : '';
@@ -925,6 +938,83 @@ async function applyInstFilterIfEnabled(results, dateStr8){
     if(net !== undefined && net >= threshold) filtered.push(r);
   });
   return filtered;
+}
+
+// ---------- 當沖張數（每日當日沖銷交易標的 TWTB4U） ----------
+// 只有「當沖」有官方免費統計，「隔日沖」證交所沒有公布這項資料，技術上做不到。
+// 這裡純粹是標註顯示用，不像主力買超那樣會拿來篩選/排除個股。
+
+function extractTableByKeywords(payload, keywordSets){
+  if(Array.isArray(payload.tables)){
+    const hit = payload.tables.find(t =>
+      Array.isArray(t.fields) &&
+      keywordSets.every(kws => t.fields.some(f => kws.some(kw => f.includes(kw))))
+    );
+    if(hit) return hit;
+  }
+  const fieldKeys = Object.keys(payload).filter(k => /^fields\d*$/.test(k));
+  for(const fk of fieldKeys){
+    const suffix = fk.slice(6);
+    const dk = 'data' + suffix;
+    const fields = payload[fk];
+    const data = payload[dk];
+    if(Array.isArray(fields) && Array.isArray(data) &&
+       keywordSets.every(kws => fields.some(f => kws.some(kw => f.includes(kw))))){
+      return { fields, data };
+    }
+  }
+  if(Array.isArray(payload.fields) && Array.isArray(payload.data)){
+    if(keywordSets.every(kws => payload.fields.some(f => kws.some(kw => f.includes(kw))))){
+      return payload;
+    }
+  }
+  return null;
+}
+
+async function fetchDayTradingMap(dateStr8 /* YYYYMMDD，西元年 */){
+  if(!dateStr8 || dateStr8.length !== 8){
+    throw new Error('當沖張數需要有效的交易日期(YYYYMMDD)');
+  }
+  const directUrl = `https://www.twse.com.tw/exchangeReport/TWTB4U?response=json&date=${dateStr8}&selectType=All`;
+  const proxyPath = `/api/daytrading?date=${dateStr8}`;
+  const { data } = await fetchJsonWithProxyFallback(directUrl, proxyPath);
+
+  const table = extractTableByKeywords(data, [['證券代號', '代號'], ['當日沖銷', '當沖']]);
+  if(!table){
+    throw new Error('查無當日沖銷交易資料(可能是非交易日，或這天沒有當沖統計)');
+  }
+
+  const fields = table.fields;
+  const idxCode = findField(fields, ['證券代號', '代號']);
+  let idxVol = fields.findIndex(f => f.includes('當日沖銷') && f.includes('股數'));
+  if(idxVol < 0) idxVol = fields.findIndex(f => f.includes('當沖') && f.includes('股數'));
+  if(idxCode < 0 || idxVol < 0){
+    throw new Error('當沖資料欄位格式不符預期(找不到「當日沖銷...股數」欄)');
+  }
+
+  const map = {};
+  table.data.forEach(row => {
+    const code = String(row[idxCode]).trim();
+    const vol = parseFloat(String(row[idxVol]).replace(/,/g, ''));
+    if(code && !isNaN(vol)) map[code] = vol / 1000; // 股 -> 張
+  });
+  return map;
+}
+
+// 如果使用者勾選了「顯示當沖張數」，標註結果(不過濾，純顯示)
+async function annotateDayTradingIfEnabled(results, dateStr8){
+  const checkbox = document.getElementById('dayTradeEnabled');
+  if(!checkbox || !checkbox.checked || !results.length) return results;
+
+  try{
+    const map = await fetchDayTradingMap(dateStr8);
+    results.forEach(r => {
+      r.dayTradeLots = (map[r.code] !== undefined) ? map[r.code] : null;
+    });
+  } catch(err){
+    setStatus(`當沖張數資料抓取失敗：${err.message || err}（不影響其他結果顯示）`, 'error');
+  }
+  return results;
 }
 
 // ---------- 進階：直接觸發 GitHub Actions 回補資料 ----------
@@ -1143,7 +1233,8 @@ document.getElementById('applyManualBtn').addEventListener('click', async ()=>{
   // 手動貼上沒有明確的「資料日期」，用 Step1 的資料日期欄位當作 T86 查詢依據
   const dateVal = document.getElementById('dateInput') ? document.getElementById('dateInput').value : '';
   const dateStr8 = dateVal.replace(/-/g, '');
-  const finalResults = await applyInstFilterIfEnabled(results, dateStr8);
+  let finalResults = await applyInstFilterIfEnabled(results, dateStr8);
+  finalResults = await annotateDayTradingIfEnabled(finalResults, dateStr8);
   const instNote = document.getElementById('instFilterEnabled').checked
     ? `，其中主力買超達標 ${finalResults.length} 檔`
     : '';
@@ -1337,6 +1428,14 @@ async function runSearch(){
       const map = await fetchT86Map(dateVal.replace(/-/g, ''));
       built.instNetBuy = (map[target.Code] !== undefined) ? map[target.Code] : null;
     } catch(e){ built.instNetBuy = null; }
+  }
+
+  // 個股查詢一樣可以順便看當沖張數(若有勾選)
+  if(document.getElementById('dayTradeEnabled').checked){
+    try{
+      const dtMap = await fetchDayTradingMap(dateVal.replace(/-/g, ''));
+      built.dayTradeLots = (dtMap[target.Code] !== undefined) ? dtMap[target.Code] : null;
+    } catch(e){ built.dayTradeLots = null; }
   }
 
   const exactNote = dayRow.exact
